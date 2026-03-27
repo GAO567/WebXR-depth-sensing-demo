@@ -106,20 +106,16 @@
         // 1. 获取深度原始值
         float depthRaw = texture(uDepthTexture, vec3(vUv, uEyeLayer)).r;
         
-        // 【核心修改】：既然乘以 65.535 会导致溢出，说明 depthRaw 很可能已经是以“米”为单位，
-        // 或者是已经按硬件极限归一化到 0.0-1.0 的值。
-        // 我们直接把它当成距离，除以一个你想要的最大可视距离即可。
-        
         float maxDistance = max(uMaxVisualDistance, 0.0001);
         
-        // 2. 重新映射亮度
-        // 如果 depthRaw 已经是米，这里就是 (实际米数 / 2 米)
-        float brightness = depthRaw / maxDistance; 
-        
-        // 3. 防止数值溢出超出 0~1 的范围
-        brightness = clamp(brightness, 0.0, 1.0);
-        
-        pc_FragColor = vec4(vec3(brightness), 1.0);
+        // 2. 检查是否超出范围：如果深度值 > maxDistance，输出白色
+        if (depthRaw > maxDistance) {
+            pc_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+        } else {
+            // 在范围内时，映射亮度（近处黑，远处灰）
+            float brightness = depthRaw / maxDistance;
+            pc_FragColor = vec4(vec3(brightness), 1.0);
+        }
     }
 `,
                      glslVersion: THREE.GLSL3, // 确保使用 WebGL 2 (ES 3.0)
