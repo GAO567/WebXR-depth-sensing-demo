@@ -28,8 +28,7 @@
                 eye: { type: 'string', default: 'left' },
                 width: { type: 'number', default: 0.8 },
                 height: { type: 'number', default: 0.6 },
-                maxDistance: { type: 'number', default: 2.0 },
-                debugDepth: { type: 'boolean', default: false }
+                maxDistance: { type: 'number', default: 2.0 }
             },
 
             applyEyeSetting: function () {
@@ -56,51 +55,7 @@
                 this.depthMaterial.uniforms.uMaxVisualDistance.value = distance;
             },
 
-            updateDebugMode: function () {
-                if (!this.depthMaterial) return;
-                this.depthMaterial.uniforms.uDebugDepth.value = this.data.debugDepth ? 1.0 : 0.0;
-            },
 
-            updateHUD: function (depthTexture) {
-                // 创建或获取HUD text entity
-                if (!this.hudEntity) {
-                    // 在场景中创建一个text entity显示HUD
-                    const scene = this.el.sceneEl;
-                    this.hudEntity = document.createElement('a-entity');
-                    this.hudEntity.setAttribute('position', '0 -0.5 -2');
-                    this.hudEntity.setAttribute('text', 'anchor: center; align: center; value: Loading...; color: #0f0; fontSize: 64; width: 10');
-                    scene.appendChild(this.hudEntity);
-                }
-
-                // 更新HUD文本
-                if (depthTexture && this.hudEntity) {
-                    let min = Infinity, max = -Infinity, sum = 0, count = 0;
-                    
-                    // 采样深度数据
-                    if (depthTexture.image && depthTexture.image.data) {
-                        const data = depthTexture.image.data;
-                        const stride = Math.max(1, Math.floor(data.length / 256));
-                        for (let i = 0; i < data.length; i += stride) {
-                            const val = data[i];
-                            if (val > 0) {
-                                min = Math.min(min, val);
-                                max = Math.max(max, val);
-                                sum += val;
-                                count++;
-                            }
-                        }
-                    }
-
-                    const avg = count > 0 ? (sum / count).toFixed(4) : '-';
-                    const minStr = min === Infinity ? '-' : min.toFixed(4);
-                    const maxStr = max === -Infinity ? '-' : max.toFixed(4);
-                    const eyeStr = this.data.eye;
-                    const maxDistStr = this.data.maxDistance.toFixed(2);
-                    
-                    const hudText = `Min: ${minStr}\nMax: ${maxStr}\nAvg: ${avg}\nEye: ${eyeStr} | MaxDist: ${maxDistStr}m`;
-                    this.hudEntity.setAttribute('text', `value: ${hudText}`);
-                }
-            },
 
             init: function () {
                 const sceneEl = this.el.sceneEl;
@@ -129,8 +84,7 @@
                         uDepthTexture: { value: null }, // 每帧更新
                         // 定义你需要可视化的最远距离（米）。超出这个距离的物体将是白色。
                         uMaxVisualDistance: { value: 2.0 }, // 建议设置在 1-3 米之间
-                        uEyeLayer: { value: 0.0 },
-                        uDebugDepth: { value: 0.0 }
+                        uEyeLayer: { value: 0.0 }
                     },
                     vertexShader: `
                         out vec2 vUv;
@@ -147,26 +101,20 @@
     uniform sampler2DArray uDepthTexture;
     uniform float uEyeLayer;
     uniform float uMaxVisualDistance;
-    uniform float uDebugDepth;
     out vec4 pc_FragColor;
 
     void main() {
         // 1. 获取深度原始值
         float depthRaw = texture(uDepthTexture, vec3(vUv, uEyeLayer)).r;
         
-        // 【调试模式】：直接显示原始深度值，看看范围是多少
-        if (uDebugDepth > 0.5) {
-            pc_FragColor = vec4(vec3(depthRaw), 1.0);
-            return;
-        }
-        
         float maxDistance = max(uMaxVisualDistance, 0.0001);
         
-        // 2. 检查是否超出范围或无效：深度为 0 或 > maxDistance 时输出白色
-        if (depthRaw <= 0.0 || depthRaw > maxDistance) {
+        // 2. 检查是否无效或超出范围
+        // 仅当深度 == 0（真的无效）或 > maxDistance（超出范围）时显示白色
+        if (depthRaw == 0.0 || depthRaw > maxDistance) {
             pc_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
         } else {
-            // 在范围内时，映射亮度（近处黑，远处灰）
+            // 映射亮度：近处黑，远处灰
             float brightness = depthRaw / maxDistance;
             pc_FragColor = vec4(vec3(brightness), 1.0);
         }
@@ -188,14 +136,12 @@
                 this.applyEyeSetting();
                 this.updatePlaneSize();
                 this.updateMaxDistance();
-                this.updateDebugMode();
             },
 
             update: function () {
                 this.applyEyeSetting();
                 this.updatePlaneSize();
                 this.updateMaxDistance();
-                this.updateDebugMode();
             },
 
             tick: function () {
@@ -215,9 +161,6 @@
                     if (depthTexture.isDataTexture2DArray === undefined) {
                         depthTexture.isDataTexture2DArray = true;
                     }
-
-                    // 更新 HUD 显示深度统计
-                    this.updateHUD(depthTexture);
                 }
             }
         };
@@ -229,8 +172,7 @@
     <a-scene  xr-mode-ui="XRMode: ar;">
         <a-entity camera position="0 1.6 0">
                <a-entity position="-0.4 0 -1" quest-depth-controller="eye: left; width: 0.8; height: 0.6; maxDistance: 2.0">  </a-entity>
-               //right
-                <a-entity position="0.4 0 -1" quest-depth-controller="eye: right; width: 0.8; height: 0.6; maxDistance: 2.0">  </a-entity>
+               <a-entity position="0.4 0 -1" quest-depth-controller="eye: right; width: 0.8; height: 0.6; maxDistance: 2.0">  </a-entity>
         </a-entity>
         
         <a-light type="ambient" color="#FFF"></a-light>
