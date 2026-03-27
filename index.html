@@ -62,41 +62,18 @@
             },
 
             updateHUD: function (depthTexture) {
-                // 创建或更新HUD mesh
-                if (!this.hudMesh) {
-                    // 创建Canvas HUD
-                    const canvas = document.createElement('canvas');
-                    canvas.width = 512;
-                    canvas.height = 256;
-                    this.hudCanvas = canvas;
-                    this.hudTexture = new THREE.CanvasTexture(canvas);
-                    
-                    const material = new THREE.MeshBasicMaterial({ 
-                        map: this.hudTexture,
-                        transparent: true,
-                        sRGBEncoding: false
-                    });
-                    const geometry = new THREE.PlaneGeometry(0.8, 0.4);
-                    this.hudMesh = new THREE.Mesh(geometry, material);
-                    
-                    // 固定到摄像机前方
-                    this.hudMesh.position.set(0, 0, -1.2);
-                    
-                    // 添加到摄像机entity中，这样就能随摄像机移动
-                    const cameraEl = this.el.sceneEl.querySelector('[camera]');
-                    if (cameraEl) {
-                        cameraEl.object3D.add(this.hudMesh);
-                    }
+                // 创建或获取HUD text entity
+                if (!this.hudEntity) {
+                    // 在场景中创建一个text entity显示HUD
+                    const scene = this.el.sceneEl;
+                    this.hudEntity = document.createElement('a-entity');
+                    this.hudEntity.setAttribute('position', '0 -0.5 -2');
+                    this.hudEntity.setAttribute('text', 'anchor: center; align: center; value: Loading...; color: #0f0; fontSize: 64; width: 10');
+                    scene.appendChild(this.hudEntity);
                 }
 
-                // 绘制HUD信息到Canvas
-                if (depthTexture && this.hudCanvas) {
-                    const ctx = this.hudCanvas.getContext('2d');
-                    
-                    // 清空背景（半透明黑）
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-                    ctx.fillRect(0, 0, this.hudCanvas.width, this.hudCanvas.height);
-                    
+                // 更新HUD文本
+                if (depthTexture && this.hudEntity) {
                     let min = Infinity, max = -Infinity, sum = 0, count = 0;
                     
                     // 采样深度数据
@@ -114,25 +91,14 @@
                         }
                     }
 
-                    // 绘制文本
-                    ctx.font = 'bold 28px monospace';
-                    ctx.fillStyle = '#0f0';
-                    ctx.textBaseline = 'top';
-                    
-                    let y = 15;
-                    const lineHeight = 50;
-                    
-                    ctx.fillText(`Min: ${min === Infinity ? '-' : min.toFixed(4)}`, 20, y);
-                    y += lineHeight;
-                    
-                    ctx.fillText(`Max: ${max === -Infinity ? '-' : max.toFixed(4)}`, 20, y);
-                    y += lineHeight;
-                    
                     const avg = count > 0 ? (sum / count).toFixed(4) : '-';
-                    ctx.fillText(`Avg: ${avg}`, 20, y);
+                    const minStr = min === Infinity ? '-' : min.toFixed(4);
+                    const maxStr = max === -Infinity ? '-' : max.toFixed(4);
+                    const eyeStr = this.data.eye;
+                    const maxDistStr = this.data.maxDistance.toFixed(2);
                     
-                    // 更新texture
-                    this.hudTexture.needsUpdate = true;
+                    const hudText = `Min: ${minStr}\nMax: ${maxStr}\nAvg: ${avg}\nEye: ${eyeStr} | MaxDist: ${maxDistStr}m`;
+                    this.hudEntity.setAttribute('text', `value: ${hudText}`);
                 }
             },
 
