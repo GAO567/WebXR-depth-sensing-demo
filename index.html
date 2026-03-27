@@ -28,7 +28,8 @@
                 eye: { type: 'string', default: 'left' },
                 width: { type: 'number', default: 0.8 },
                 height: { type: 'number', default: 0.6 },
-                maxDistance: { type: 'number', default: 0.5 }
+                maxDistance: { type: 'number', default: 0.5 },
+                invalidColor: { type: 'color', default: '#a6a6a6' }
             },
 
             applyEyeSetting: function () {
@@ -53,6 +54,12 @@
                     ? this.data.maxDistance
                     : 0.5;
                 this.depthMaterial.uniforms.uMaxVisualDistance.value = distance;
+            },
+
+            updateInvalidColor: function () {
+                if (!this.depthMaterial) return;
+                const color = new THREE.Color(this.data.invalidColor || '#a6a6a6');
+                this.depthMaterial.uniforms.uInvalidColor.value.copy(color);
             },
 
 
@@ -84,7 +91,8 @@
                         uDepthTexture: { value: null }, // 每帧更新
                         // maxDistance 是 0-1 范围内的阈值。超出这个值的物体将是白色。
                         uMaxVisualDistance: { value: 0.5 }, // 建议设置在 0.3-0.8 之间
-                        uEyeLayer: { value: 0.0 }
+                        uEyeLayer: { value: 0.0 },
+                        uInvalidColor: { value: new THREE.Color('#a6a6a6') }
                     },
                     vertexShader: `
                         out vec2 vUv;
@@ -101,6 +109,7 @@
     uniform sampler2DArray uDepthTexture;
     uniform float uEyeLayer;
     uniform float uMaxVisualDistance;
+    uniform vec3 uInvalidColor;
     out vec4 pc_FragColor;
 
     void main() {
@@ -109,10 +118,14 @@
         
         // 注：depthRaw 是 0-1 的归一化值，maxDistance 作为阈值使用
         float maxDistance = max(uMaxVisualDistance, 0.0001);
+        bool isInvalid = (depthRaw <= 0.00001) || (depthRaw >= 0.9999);
         
-        // 2. 检查是否无效或超出范围
-        // 当深度 == 0（无效）或 >= maxDistance（超出范围）时显示白色
-        if (depthRaw == 0.0 || depthRaw >= maxDistance) {
+        // 2. 无效深度显示为浅灰（Quest 上 1.0 常是无效填充值）
+        if (isInvalid) {
+            pc_FragColor = vec4(uInvalidColor, 1.0);
+        }
+        // 3. 仅“有效深度且超过阈值”才显示白色
+        else if (depthRaw >= maxDistance) {
             pc_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
         } else {
             // 映射亮度：近处黑，远处灰
@@ -137,12 +150,14 @@
                 this.applyEyeSetting();
                 this.updatePlaneSize();
                 this.updateMaxDistance();
+                this.updateInvalidColor();
             },
 
             update: function () {
                 this.applyEyeSetting();
                 this.updatePlaneSize();
                 this.updateMaxDistance();
+                this.updateInvalidColor();
             },
 
             tick: function () {
@@ -172,8 +187,8 @@
 
     <a-scene  xr-mode-ui="XRMode: ar;">
         <a-entity camera position="0 1.6 0">
-               <a-entity position="-0.4 0 -1" quest-depth-controller="eye: left; width: 0.8; height: 0.6; maxDistance: 1.0">  </a-entity>
-               <a-entity position="0.4 0 -1" quest-depth-controller="eye: right; width: 0.8; height: 0.6; maxDistance: 1.5">  </a-entity>
+             <a-entity position="-0.4 0 -1" quest-depth-controller="eye: left; width: 0.8; height: 0.6; maxDistance: 1.1; invalidColor: #00ffff">  </a-entity>
+             <a-entity position="0.4 0 -1" quest-depth-controller="eye: right; width: 0.8; height: 0.6; maxDistance: 1.5; invalidColor: #ff00ff">  </a-entity>
         </a-entity>
         
         <a-light type="ambient" color="#FFF"></a-light>
