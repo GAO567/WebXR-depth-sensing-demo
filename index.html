@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Quest 3 WebXR Depth Sensing - Fixed V2</title>
+    <script src="https://aframe.io/releases/1.7.0/aframe.min.js"></script>
+    <style>
+        .ar-hint {
+            position: fixed;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-family: Arial, sans-serif;
+            z-index: 10;
+            pointer-events: none;
+            background-color: rgba(0,0,0,0.5);
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="ar-hint">请使用 HTTPS，点击右下角 AR 按钮。确保光线充足，不要对着白墙。</div>
+
+    <script>
+        // 核心优化组件：V2
+        AFRAME.registerComponent('quest-depth-controller-v2', {
+            init: function () {
+                const sceneEl = this.el.sceneEl;
+                const webxrSystem = sceneEl.systems.webxr;
+
+                // --- 1. 核心修复：更健壮的系统初始化 ---
+                // 我们不再手动 setAttribute 'webxr'，因为这可能导致异步竞争问题。
+                // 而是直接在系统中注入配置。
+
+                // A-Frame 会自动将我们声明的 feature 添加到 session 中。
+                webxrSystem.sessionConfiguration.optionalFeatures.push('depth-sensing');
+                
+                // 配置深度感知参数
+                webxrSystem.sessionConfiguration.depthSensing = {
+                    usagePreference: ["gpu-optimized"],
+                    dataFormatPreference: ["unsigned-short"], // 使用 16 位整数
+                    matchDepthView: true 
+                };
+
+                // 在 scene loaded 之前强制同步一下（A-Frame 1.7 必需补丁）
+                // 我们在组件 init 时就必须确保配置已写入，防止 session 启动时漏掉。
+                
+                // --- 2. 创建深度可视化着色器 (整数采样) ---
+                this.depthMaterial = new THREE.ShaderMaterial({
+                    uniforms: {
+                        uDepthTexture: { value: null }, // 每帧更新
+                        // 定义你需要可视化的最远距离（米）。超出这个距离的物体将是白色。
+                        uMaxVisualDistance: { value: 2.0 } // 建议设置在 1-3 米之间
+                    },
+                    vertexShader: `
+                        out vec2 vUv;
+                        void main() {
+                            vUv = uv;
+                            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                        }
+                    `,
+                    fragmentShader: `
+    precision highp float;
+    precision highp sampler2DArray;
+
+    in vec2 vUv;
+    uniform sampler2DArray uDepthTexture;
+    out vec4 pc_FragColor;
+
+    void main() {
+        // 1. 获取深度原始值
+        float depthRaw = texture(uDepthTexture, vec3(vUv, 0.0)).r;
+        
+        // 【核心修改】：既然乘以 65.535 会导致溢出，说明 depthRaw 很可能已经是以“米”为单位，
+        // 或者是已经按硬件极限归一化到 0.0-1.0 的值。
+        // 我们直接把它当成距离，除以一个你想要的最大可视距离即可。
+        
+        float maxDistance = 2.0; // 这里的 2.0 代表 2 米
+        
+        // 2. 重新映射亮度
+        // 如果 depthRaw 已经是米，这里就是 (实际米数 / 2 米)
+        float brightness = depthRaw / maxDistance; 
+        
+        // 3. 防止数值溢出超出 0~1 的范围
+        brightness = clamp(brightness, 0.0, 1.0);
+        
+        pc_FragColor = vec4(vec3(brightness), 1.0);
+    }
+`,
+                     glslVersion: THREE.GLSL3, // 确保使用 WebGL 2 (ES 3.0)
+                    side: THREE.DoubleSide
+                });
+
+                // --- 3. 创建 Three.js 平面并注入 A-Frame ---
+                const geometry = new THREE.PlaneGeometry(0.8, 0.6); // 稍微加大一点
+                this.mesh = new THREE.Mesh(geometry, this.depthMaterial);
+                
+                // 放置在相机正前方 1 米处，稍微偏上一点，避免遮挡视线中心
+                this.mesh.position.set(0, 0.2, -1.0);
+                
+                this.el.setObject3D('depthPreview', this.mesh);
+            },
+
+            tick: function () {
+                const renderer = this.el.sceneEl.renderer;
+                if (!renderer.xr.enabled) return;
+
+                // --- 4. 每帧更新深度纹理 ---
+                const depthTexture = renderer.xr.getDepthTexture();
+                
+                if (depthTexture) {
+                    // 如果成功获取到纹理，我们就更新 Shader 的 Uniform
+                    this.depthMaterial.uniforms.uDepthTexture.value = depthTexture;
+                    
+                    // 核心补丁：确保 Three.js 将这个纹理作为 DataTexture2DArray 绑定
+                    // 这对于 unsigned-short 格式非常重要
+                    if (depthTexture.isDataTexture2DArray === undefined) {
+                        depthTexture.isDataTexture2DArray = true;
+                    }
+                }
+            }
+        });
+    </script>
+
+    <a-scene quest-depth-controller-v2 xr-mode-ui="XRMode: ar;">
+        <a-entity camera position="0 1.6 0"></a-entity>
+        
+        <a-light type="ambient" color="#FFF"></a-light>
+    </a-scene>
+
+</body>
+</html>
